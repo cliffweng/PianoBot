@@ -1,10 +1,8 @@
-## https://gilberttanner.com/blog/yolo-object-detection-with-opencv
-## run wiht "python yolo.py"
 import numpy as np
 import argparse
 import cv2
 import os
-import time
+import mss
 
 def extract_boxes_confidences_classids(outputs, confidence, width, height):
     boxes = []
@@ -35,7 +33,7 @@ def extract_boxes_confidences_classids(outputs, confidence, width, height):
     return boxes, confidences, classIDs
 
 
-def draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors):
+def draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors, labels):
     if len(idxs) > 0:
         for i in idxs.flatten():
             # extract bounding box coordinates
@@ -77,6 +75,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--threshold', type=float, default=0.3, help='Threshold for Non-Max Suppression')
     parser.add_argument('-u', '--use_gpu', default=False, action='store_true', help='Use GPU (OpenCV must be compiled for GPU). For more info checkout: https://www.pyimagesearch.com/2020/02/03/how-to-use-opencvs-dnn-module-with-nvidia-gpus-cuda-and-cudnn/')
     parser.add_argument('-s', '--save', default=False, action='store_true', help='Whether or not the output should be saved')
+    parser.add_argument('-r', '--screen', default=False, action='store_true', help='Whether or not use the screen video capture')
     parser.add_argument('-sh', '--show', default=True, action="store_false", help='Show output')
 
     input_group = parser.add_mutually_exclusive_group()
@@ -107,13 +106,12 @@ if __name__ == '__main__':
     layer_names = net.getLayerNames()
     layer_names = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-
     if args.image_path != '':
         image = cv2.imread(args.image_path)
 
         boxes, confidences, classIDs, idxs = make_prediction(net, layer_names, labels, image, args.confidence, args.threshold)
 
-        image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors)
+        image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors,labels)
 
         # show the output image
         if args.show:
@@ -123,38 +121,57 @@ if __name__ == '__main__':
         if args.save:
             cv2.imwrite(f'output/{args.image_path.split("/")[-1]}', image)
     else:
-        if args.video_path != '':
-            cap = cv2.VideoCapture(args.video_path)
+        if args.screen:
+            with mss.mss() as sct:
+                # Part of the screen to capture
+                monitor = {"top": 40, "left": 0, "width": 800, "height": 640}
+                while "Screen capturing":
+                    # Get raw pixels from the screen, save it to a Numpy array
+                    image = np.array(sct.grab(monitor)) # red, green, blue, alpha
+                    image = np.delete(image, 3, 2) # delete the 'a' from 'rgba', (640,800,4) -> (640,800,3)
+                    #image = sct.grab(monitor)
+                    boxes, confidences, classIDs, idxs = make_prediction(net, layer_names, labels, image, args.confidence, args.threshold)
+                    image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors, labels)
+
+                    if args.show:
+                        cv2.imshow('YOLO Object Detection', image)
+                        if cv2.waitKey(1) & 0xFF == ord('q'):
+                            break
+                    if args.save:
+                        out.write(image)
+
         else:
-            cap = cv2.VideoCapture(1)
+            if args.video_path != '':
+                cap = cv2.VideoCapture(args.video_path)
+            else:
+                cap = cv2.VideoCapture(1)
 
-        if args.save:
-            width = int(cap.get(3))
-            height = int(cap.get(4))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            name = args.video_path.split("/")[-1] if args.video_path else 'camera.avi'
-            out = cv2.VideoWriter(f'output/{name}', cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width, height))
-
-        while cap.isOpened():
-            ret, image = cap.read()
-
-            if not ret:
-                print('Video file finished.')
-                break
-
-            boxes, confidences, classIDs, idxs = make_prediction(net, layer_names, labels, image, args.confidence, args.threshold)
-
-            image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors)
-
-            if args.show:
-                cv2.imshow('YOLO Object Detection', image)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-            
             if args.save:
-                out.write(image)
-    
-        cap.release()
+                width = int(cap.get(3))
+                height = int(cap.get(4))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                name = args.video_path.split("/")[-1] if args.video_path else 'camera.avi'
+                out = cv2.VideoWriter(f'output/{name}', cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width, height))
+
+            while cap.isOpened():
+                ret, image = cap.read()
+
+                if not ret:
+                    print('Video file finished.')
+                    break
+
+                boxes, confidences, classIDs, idxs = make_prediction(net, layer_names, labels, image, args.confidence, args.threshold)
+                image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors)
+
+                if args.show:
+                    cv2.imshow('YOLO Object Detection', image)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+                
+                if args.save:
+                    out.write(image)
+        
+            cap.release()
         if args.save:
             out.release()
     cv2.destroyAllWindows()
