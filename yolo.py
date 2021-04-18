@@ -161,7 +161,7 @@ if __name__ == '__main__':
                     break
 
                 boxes, confidences, classIDs, idxs = make_prediction(net, layer_names, labels, image, args.confidence, args.threshold)
-                image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors)
+                image = draw_bounding_boxes(image, boxes, confidences, classIDs, idxs, colors, labels)
 
                 if args.show:
                     cv2.imshow('YOLO Object Detection', image)
